@@ -2,6 +2,7 @@ import { RingBuffer } from '../src/ring-buffer.js';
 import { median, percentile } from '../src/stats.js';
 import { spikeFilter } from '../src/spike-filter.js';
 import { hexdump, byteStats } from '../src/hexdump.js';
+import { binTrace, normalize, buildTemplate, classify } from '../src/fingerprint.js';
 
 const CAPACITY = 4000;        // samples kept for the chart
 const CAP_GB = 8;             // hard file-size cap
@@ -15,6 +16,22 @@ let sampleCount = 0;
 let lastRateStamp = performance.now();
 let lastRateCount = 0;
 let rate = 0;
+
+// --- Website fingerprinting state ---
+const SITES = [
+  { label: 'YouTube', url: 'https://www.youtube.com' },
+  { label: 'Wikipedia', url: 'https://en.wikipedia.org' },
+  { label: 'Amazon', url: 'https://www.amazon.com' },
+  { label: 'example.com', url: 'https://example.com' },
+];
+const FP_WINDOW_MS = 8000;
+const FP_REPS = 3;
+const FP_BINS = 200;
+const FP_MAXLAG = 15;
+const calibration = new Map(); // label -> vector[]
+const templates = new Map();   // label -> template vector
+let captureSink = null;        // function(sample) while a capture window is open
+let measuring = false;         // true while the SSD read-loop is running
 
 function setStatus(text) { $('status').textContent = text; }
 
@@ -57,10 +74,12 @@ function ensureWorker() {
       const pct = ((m.written / m.total) * 100).toFixed(0);
       setStatus(`Preparing probe file… ${pct}% (${fmtBytes(m.written)} / ${fmtBytes(m.total)})`);
     } else if (m.type === 'samples') {
+      const arr = performance.now();
       for (const v of m.latencies) {
         raw.push(v);
         sampleCount++;
         if (v > SPIKE_MS) spikeCount++;
+        if (captureSink) captureSink({ t: arr, latency: v });
       }
     } else if (m.type === 'dump') {
       renderDump(m.offset, m.readSize, m.bytes);
@@ -73,6 +92,7 @@ function ensureWorker() {
 }
 
 function stop() {
+  measuring = false;
   if (worker) worker.postMessage({ type: 'stop' });
   $('start').disabled = false;
   $('stop').disabled = true;
@@ -156,8 +176,127 @@ function renderDump(offset, readSize, bytes) {
 
 function loop() { updateStats(); drawChart(); }
 
+// ---- Website fingerprinting ----
+
+function fpStatus(text) { $('fpStatus').textContent = text; }
+
+function captureWindow(ms) {
+  return new Promise((resolve) => {
+    const buf = [];
+    captureSink = (s) => buf.push(s);
+    setTimeout(() => { captureSink = null; resolve(buf); }, ms);
+  });
+}
+
+function traceToVector(samples) {
+  const binned = binTrace(samples, { windowMs: FP_WINDOW_MS, bins: FP_BINS });
+  const smoothed = spikeFilter(binned, { thresholdMs: SPIKE_MS, window: 20 });
+  return normalize(smoothed);
+}
+
+function countdown(n) {
+  return new Promise((resolve) => {
+    let k = n;
+    fpStatus(`Get ready… ${k}`);
+    const iv = setInterval(() => {
+      k--;
+      if (k <= 0) { clearInterval(iv); resolve(); } else fpStatus(`Get ready… ${k}`);
+    }, 1000);
+  });
+}
+
+function updateCalibrationUI() {
+  for (const span of document.querySelectorAll('.fpticks')) {
+    const n = (calibration.get(span.dataset.label) || []).length;
+    span.textContent = '✓'.repeat(n) + '·'.repeat(Math.max(0, FP_REPS - n)) + ` (${n}/${FP_REPS})`;
+  }
+  const ready = templates.size >= 2;
+  $('fpGuess').disabled = !ready;
+  $('fpSelfTest').disabled = !ready;
+}
+
+function renderResults(result) {
+  const box = $('fpResults');
+  box.innerHTML = '';
+  const max = Math.max(0.001, ...result.ranking.map((r) => Math.max(0, r.score)));
+  for (const r of result.ranking) {
+    const pct = Math.round((Math.max(0, r.score) / max) * 100);
+    const row = document.createElement('div');
+    row.className = 'fpbar' + (r.label === result.best ? ' top' : '');
+    row.innerHTML =
+      `<span class="fplabel">${r.label}</span>` +
+      `<span class="fptrack"><span class="fpfill" style="width:${pct}%"></span></span>` +
+      `<span class="fpscore">${r.score.toFixed(2)}</span>`;
+    box.appendChild(row);
+  }
+}
+
+async function captureSite(site) {
+  if (!measuring) { fpStatus('Start the SSD measurement first.'); return; }
+  const popup = window.open(site.url, '_blank');
+  if (!popup) fpStatus(`Popup blocked — allow popups, or open ${site.label} yourself now.`);
+  else fpStatus(`Capturing ${site.label}… (window opens for ${FP_WINDOW_MS / 1000}s)`);
+  const samples = await captureWindow(FP_WINDOW_MS);
+  try { if (popup) popup.close(); } catch (e) { /* cross-origin close may throw */ }
+  if (samples.length < 50) { fpStatus('Too few samples — is the measurement running?'); return; }
+  if (!calibration.has(site.label)) calibration.set(site.label, []);
+  calibration.get(site.label).push(traceToVector(samples));
+  templates.set(site.label, buildTemplate(calibration.get(site.label)));
+  updateCalibrationUI();
+  fpStatus(`${site.label}: ${calibration.get(site.label).length}/${FP_REPS} captured.`);
+}
+
+async function guess() {
+  if (templates.size < 2) { fpStatus('Calibrate at least two sites first.'); return; }
+  if (!measuring) { fpStatus('Start the SSD measurement first.'); return; }
+  await countdown(3);
+  fpStatus('Measuring — open ONE of the calibrated sites now!');
+  const samples = await captureWindow(FP_WINDOW_MS);
+  if (samples.length < 50) { fpStatus('Too few samples — is the measurement running?'); return; }
+  const result = classify(traceToVector(samples), templates, { maxLag: FP_MAXLAG });
+  renderResults(result);
+  fpStatus(`You probably opened: ${result.best} (${Math.round(result.confidence * 100)}% margin over the runner-up).`);
+}
+
+async function selfTest() {
+  if (templates.size < 2) { fpStatus('Calibrate at least two sites first.'); return; }
+  if (!measuring) { fpStatus('Start the SSD measurement first.'); return; }
+  const labels = [...templates.keys()];
+  const pick = labels[Math.floor(Math.random() * labels.length)];
+  const site = SITES.find((s) => s.label === pick);
+  const popup = window.open(site.url, '_blank');
+  fpStatus('Self-test: measuring a site I picked secretly…');
+  const samples = await captureWindow(FP_WINDOW_MS);
+  try { if (popup) popup.close(); } catch (e) { /* cross-origin close may throw */ }
+  if (samples.length < 50) { fpStatus('Too few samples — is the measurement running?'); return; }
+  const result = classify(traceToVector(samples), templates, { maxLag: FP_MAXLAG });
+  renderResults(result);
+  const ok = result.best === pick ? '✓ correct' : '✗ wrong';
+  fpStatus(`Self-test: I predicted ${result.best}; it was actually ${pick} — ${ok}.`);
+}
+
+function initFingerprint() {
+  const container = $('fpSites');
+  for (const site of SITES) {
+    const row = document.createElement('div');
+    row.className = 'fprow';
+    const btn = document.createElement('button');
+    btn.textContent = `Capture ${site.label}`;
+    btn.addEventListener('click', () => captureSite(site));
+    const ticks = document.createElement('span');
+    ticks.className = 'fpticks';
+    ticks.dataset.label = site.label;
+    row.append(btn, ticks);
+    container.appendChild(row);
+  }
+  $('fpGuess').addEventListener('click', guess);
+  $('fpSelfTest').addEventListener('click', selfTest);
+  updateCalibrationUI();
+}
+
 function init() {
   showEnvironment();
+  initFingerprint();
   const sizeInput = $('size');
   const updateWarn = () => {
     const bytes = Number(sizeInput.value) * (1024 ** 3);
@@ -179,6 +318,7 @@ function init() {
     const readSize = Number($('readSize').value);
     spikeCount = 0; sampleCount = 0; lastRateCount = 0;
     $('start').disabled = true; $('stop').disabled = false;
+    measuring = true;
     ensureWorker().postMessage({ type: 'start', sizeBytes: bytes, readSize });
   });
 
