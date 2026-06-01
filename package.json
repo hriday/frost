@@ -1,0 +1,11 @@
+{
+  "name": "frost-poc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser-only POC of the FROST OPFS SSD-timing side channel",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}
