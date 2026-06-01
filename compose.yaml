@@ -1,0 +1,13 @@
+# FROST POC — runs behind the host's Caddy reverse proxy.
+# Bound to 127.0.0.1 only; Caddy (systemd service) proxies
+# frost.moosha.org -> 127.0.0.1:8013. Never exposed publicly by Docker.
+services:
+  frost:
+    build: .
+    image: frost-poc:latest
+    container_name: frost
+    restart: unless-stopped
+    environment:
+      - PORT=8013
+    ports:
+      - "127.0.0.1:8013:8013"
