@@ -73,3 +73,37 @@ test('classify returns ranking sorted by score and a confidence in [0,1]', () =>
   assert.ok(r.ranking[0].score >= r.ranking[1].score);
   assert.ok(r.confidence >= 0 && r.confidence <= 1);
 });
+
+test('classify accepts an array of [label, vector] entries', () => {
+  const entries = [['A', bump(40, 10)], ['B', bump(40, 30)]];
+  const r = classify(bump(40, 10), entries, { maxLag: 15 });
+  assert.equal(r.best, 'A');
+});
+
+test('classify on empty templates yields null best and zero confidence', () => {
+  const r = classify(bump(40, 10), new Map(), { maxLag: 15 });
+  assert.equal(r.best, null);
+  assert.equal(r.confidence, 0);
+  assert.deepEqual(r.ranking, []);
+});
+
+test('classify with a constant vector returns a finite ranking (all-zero scores)', () => {
+  const templates = new Map([['A', bump(40, 10)], ['B', bump(40, 30)]]);
+  const r = classify(new Array(40).fill(5), templates, { maxLag: 15 });
+  assert.equal(r.ranking.length, 2);
+  for (const item of r.ranking) assert.equal(item.score, 0);
+  assert.equal(r.confidence, 0);
+});
+
+test('binTrace fills a leading empty slice from the first known value', () => {
+  // first sample lands in slice 2 of 4 (25ms slices over 100ms)
+  const out = binTrace([{ t: 55, latency: 8 }, { t: 80, latency: 8 }], { windowMs: 100, bins: 4 });
+  assert.deepEqual(out, [8, 8, 8, 8]);
+});
+
+test('binTrace puts a sole in-window sample into slice 0 and fills the rest', () => {
+  // The window starts at the first sample's t (500), so idx = floor((500-500)/sliceMs) = 0.
+  // The sample lands in slice 0; trailing empty slices take that value -> [9, 9, 9].
+  const out = binTrace([{ t: 500, latency: 9 }], { windowMs: 100, bins: 3 });
+  assert.deepEqual(out, [9, 9, 9]);
+});
