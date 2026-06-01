@@ -44,3 +44,32 @@ test('normalize maps all-equal input to zeros', () => {
 test('buildTemplate averages elementwise', () => {
   assert.deepEqual(buildTemplate([[1, 2], [3, 4]]), [2, 3]);
 });
+
+import { classify } from '../src/fingerprint.js';
+
+function bump(len, c, w = 4) {
+  return Array.from({ length: len }, (_, i) => Math.max(0, 1 - Math.abs(i - c) / w));
+}
+
+test('classify picks the matching fingerprint', () => {
+  const templates = new Map([['A', bump(40, 10)], ['B', bump(40, 30)]]);
+  const vec = bump(40, 10);
+  const r = classify(vec, templates, { maxLag: 15 });
+  assert.equal(r.best, 'A');
+  assert.ok(r.ranking[0].score > r.ranking[1].score);
+});
+
+test('classify tolerates a small time shift within maxLag', () => {
+  const templates = new Map([['A', bump(40, 10)], ['B', bump(40, 30)]]);
+  const vec = bump(40, 14);
+  const r = classify(vec, templates, { maxLag: 15 });
+  assert.equal(r.best, 'A');
+});
+
+test('classify returns ranking sorted by score and a confidence in [0,1]', () => {
+  const templates = new Map([['A', bump(40, 10)], ['B', bump(40, 30)]]);
+  const r = classify(bump(40, 10), templates, { maxLag: 15 });
+  assert.equal(r.ranking.length, 2);
+  assert.ok(r.ranking[0].score >= r.ranking[1].score);
+  assert.ok(r.confidence >= 0 && r.confidence <= 1);
+});
