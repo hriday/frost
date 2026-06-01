@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const SRC_DIR = path.join(__dirname, 'src');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -24,15 +25,34 @@ function setIsolationHeaders(res) {
   res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
 }
 
-export function createFrostServer(publicDir = PUBLIC_DIR) {
+// Confine `rel` within `baseDir`. Returns an absolute path, or null if it
+// would escape the directory (path traversal).
+function confine(baseDir, rel) {
+  const resolved = path.resolve(baseDir, rel);
+  if (resolved === baseDir || resolved.startsWith(baseDir + path.sep)) return resolved;
+  return null;
+}
+
+// Map a request URL path to a file on disk. `/src/...` is served from the
+// project-root src/ directory (so the page can import the shared ES modules);
+// everything else is served from public/. Returns an absolute path, or null
+// if the request escapes its allowed root.
+export function resolveRequestPath(urlPath, { publicDir = PUBLIC_DIR, srcDir = SRC_DIR } = {}) {
+  if (urlPath === '/src' || urlPath.startsWith('/src/')) {
+    return confine(srcDir, urlPath.slice('/src/'.length));
+  }
+  const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
+  return confine(publicDir, rel);
+}
+
+export function createFrostServer(publicDir = PUBLIC_DIR, srcDir = SRC_DIR) {
   return http.createServer((req, res) => {
     setIsolationHeaders(res);
 
     const urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-    const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
-    const resolved = path.resolve(publicDir, rel);
+    const resolved = resolveRequestPath(urlPath, { publicDir, srcDir });
 
-    if (resolved !== publicDir && !resolved.startsWith(publicDir + path.sep)) {
+    if (resolved === null) {
       res.writeHead(403); res.end('Forbidden'); return;
     }
 

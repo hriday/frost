@@ -1,7 +1,11 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { createFrostServer, contentTypeFor } from '../server.js';
+import { createFrostServer, contentTypeFor, resolveRequestPath } from '../server.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const PROJECT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 test('contentTypeFor maps known extensions', () => {
   assert.equal(contentTypeFor('a.html'), 'text/html; charset=utf-8');
@@ -35,4 +39,31 @@ test('blocks path traversal (encoded, reaches the guard)', async () => {
         .on('error', reject);
   });
   assert.equal(status, 403);
+});
+
+test('serves shared ES modules under /src', async () => {
+  const res = await fetch(`${base}/src/ring-buffer.js`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /javascript/);
+  const body = await res.text();
+  assert.match(body, /export class RingBuffer/);
+});
+
+test('resolveRequestPath maps /src/<file> into the src dir', () => {
+  assert.equal(
+    resolveRequestPath('/src/stats.js'),
+    path.join(PROJECT, 'src', 'stats.js'),
+  );
+});
+
+test('resolveRequestPath blocks /src traversal escaping src dir', () => {
+  // `/src/../server.js` must NOT resolve to the project root file.
+  assert.equal(resolveRequestPath('/src/../server.js'), null);
+});
+
+test('resolveRequestPath maps / to public/index.html', () => {
+  assert.equal(
+    resolveRequestPath('/'),
+    path.join(PROJECT, 'public', 'index.html'),
+  );
 });

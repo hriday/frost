@@ -1,1 +1,63 @@
-<!doctype html><meta charset="utf-8"><title>FROST</title>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FROST — OPFS SSD-Timing POC</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header>
+    <h1>FROST</h1>
+    <p class="sub">Fingerprinting Remotely using OPFS-based SSD Timing — a proof-of-concept that
+      measures <em>your own</em> machine's SSD contention from JavaScript. Nothing leaves your browser.</p>
+  </header>
+
+  <section class="panel env">
+    <h2>Environment</h2>
+    <dl>
+      <dt>Cross-origin isolated</dt><dd id="coi">—</dd>
+      <dt>OPFS available</dt><dd id="opfs">—</dd>
+      <dt>Device memory</dt><dd id="mem">—</dd>
+      <dt>Storage</dt><dd id="quota">—</dd>
+    </dl>
+  </section>
+
+  <section class="panel controls">
+    <h2>Controls</h2>
+    <label>Probe file size: <input type="range" id="size" min="1" max="8" step="1" value="2" />
+      <span id="sizeLabel">2 GB</span></label>
+    <label>Read size:
+      <select id="readSize">
+        <option value="4096">4 KB</option>
+        <option value="65536">64 KB</option>
+        <option value="131072" selected>128 KB</option>
+        <option value="524288">512 KB</option>
+      </select>
+    </label>
+    <div class="buttons">
+      <button id="start">Start</button>
+      <button id="stop" disabled>Stop</button>
+      <button id="delete" class="danger">Delete probe file</button>
+    </div>
+    <p id="warn" class="warn"></p>
+    <p id="status" class="status">Idle.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Live SSD access latency</h2>
+    <canvas id="chart" width="900" height="280"></canvas>
+    <div class="stats">
+      <div><span class="k">current</span><span id="cur">—</span></div>
+      <div><span class="k">median</span><span id="median">—</span></div>
+      <div><span class="k">p95</span><span id="p95">—</span></div>
+      <div><span class="k">rate</span><span id="rate">—</span></div>
+      <div><span class="k">spikes &gt;1ms</span><span id="spikes">0</span></div>
+    </div>
+    <p class="hint">With measurement running, launch a native app or load a heavy website on the
+      same disk and watch the latency rise — that's SSD contention leaking activity.</p>
+  </section>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
