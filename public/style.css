@@ -6,6 +6,8 @@ body {
 }
 header h1 { margin: 0; font-size: 2.2rem; letter-spacing: 0.1em; color: #5cf; }
 .sub { color: #8b949e; max-width: 60ch; }
+.cite { color: #6e7681; font-size: 0.85rem; max-width: 60ch; margin-top: 0.25rem; }
+.cite a { color: #5cf; }
 .panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px;
   padding: 1rem 1.25rem; margin: 1rem 0; }
 .panel h2 { margin: 0 0 0.75rem; font-size: 1rem; color: #9ab; text-transform: uppercase;
