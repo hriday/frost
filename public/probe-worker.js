@@ -4,6 +4,8 @@
 const FILE_NAME = 'frost-probe.bin';
 const FILL_CHUNK = 8 * 1024 * 1024; // 8 MiB
 const BATCH_MS = 16;                // flush samples to the page ~60x/sec
+const DUMP_MS = 350;                // send a byte sample to the page ~3x/sec
+const DUMP_BYTES = 256;             // how many bytes of the last read to show
 
 let handle = null;
 let running = false;
@@ -54,6 +56,8 @@ function measureLoop(sizeBytes, readSize) {
   const maxOffset = Math.max(0, sizeBytes - readSize);
   let batch = [];
   let lastFlush = performance.now();
+  let lastDump = 0;
+  let lastOffset = 0;
 
   function tick() {
     if (!running) return;
@@ -64,12 +68,19 @@ function measureLoop(sizeBytes, readSize) {
       handle.read(buf, { at: offset });
       const dt = performance.now() - t0;
       batch.push(dt);
+      lastOffset = offset;
     }
     const now = performance.now();
     if (now - lastFlush >= BATCH_MS && batch.length) {
       post('samples', { latencies: batch });
       batch = [];
       lastFlush = now;
+    }
+    // Occasionally ship the bytes of the most recent read so the page can
+    // show what actually came off the disk (our own random probe data).
+    if (now - lastDump >= DUMP_MS) {
+      post('dump', { offset: lastOffset, readSize, bytes: buf.slice(0, DUMP_BYTES) });
+      lastDump = now;
     }
     setTimeout(tick, 0);
   }

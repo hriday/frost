@@ -31,3 +31,11 @@ canvas { width: 100%; height: auto; background: #0a0e14; border: 1px solid #3036
 .stats .k { display: block; color: #8b949e; font-size: 0.8rem; text-transform: uppercase; }
 .stats div span:last-child { font-size: 1.1rem; color: #c9d1d9; }
 .hint { color: #8b949e; font-size: 0.9rem; }
+.dump { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-start; margin-top: 0.5rem; }
+.hex { flex: 1 1 460px; min-width: 0; overflow-x: auto; margin: 0;
+  background: #0a0e14; border: 1px solid #30363d; border-radius: 6px; padding: 0.75rem;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, monospace; color: #9fb4d0; }
+.swatchwrap { margin: 0; text-align: center; }
+.swatch { width: 160px; height: 160px; image-rendering: pixelated;
+  background: #0a0e14; border: 1px solid #30363d; border-radius: 6px; display: block; }
+.swatchwrap figcaption { color: #8b949e; font-size: 0.75rem; margin-top: 0.35rem; }

@@ -1,6 +1,7 @@
 import { RingBuffer } from '../src/ring-buffer.js';
 import { median, percentile } from '../src/stats.js';
 import { spikeFilter } from '../src/spike-filter.js';
+import { hexdump, byteStats } from '../src/hexdump.js';
 
 const CAPACITY = 4000;        // samples kept for the chart
 const CAP_GB = 8;             // hard file-size cap
@@ -61,6 +62,8 @@ function ensureWorker() {
         sampleCount++;
         if (v > SPIKE_MS) spikeCount++;
       }
+    } else if (m.type === 'dump') {
+      renderDump(m.offset, m.readSize, m.bytes);
     } else if (m.type === 'error') {
       setStatus(`Error: ${m.message}`);
       stop();
@@ -123,6 +126,32 @@ function drawChart() {
   ctx.fillText('0 ms', 4, h - 4);
 
   requestAnimationFrame(loop);
+}
+
+function drawSwatch(bytes) {
+  const c = $('swatch');
+  const ctx = c.getContext('2d');
+  const cols = 16;
+  const rows = Math.ceil(bytes.length / cols);
+  const cw = c.width / cols;
+  const ch = c.height / rows;
+  for (let i = 0; i < bytes.length; i++) {
+    const v = bytes[i];                 // 0..255 -> grayscale pixel
+    ctx.fillStyle = `rgb(${v},${v},${v})`;
+    ctx.fillRect((i % cols) * cw, Math.floor(i / cols) * ch, Math.ceil(cw), Math.ceil(ch));
+  }
+}
+
+function renderDump(offset, readSize, bytes) {
+  $('dumpMeta').textContent =
+    `${bytes.length} bytes from file offset 0x${offset.toString(16)} (read size ${fmtBytes(readSize)})`;
+  $('hex').textContent = hexdump(bytes);
+  const s = byteStats(bytes);
+  $('dumpHuman').textContent =
+    `In plain terms: these are random bytes this page itself wrote to its own probe file — ` +
+    `${s.printablePct}% happen to be printable characters, ${s.distinct}/${s.total} distinct values, ` +
+    `no readable message. That's expected: the leak is in how long the read took, not in these bytes.`;
+  drawSwatch(bytes);
 }
 
 function loop() { updateStats(); drawChart(); }

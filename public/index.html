@@ -61,6 +61,23 @@
       same disk and watch the latency rise — that's SSD contention leaking activity.</p>
   </section>
 
+  <section class="panel">
+    <h2>Last read off the SSD</h2>
+    <p id="dumpMeta" class="status">— (start measuring to see bytes)</p>
+    <div class="dump">
+      <pre id="hex" class="hex">(waiting for the first read…)</pre>
+      <figure class="swatchwrap">
+        <canvas id="swatch" width="256" height="256" class="swatch"></canvas>
+        <figcaption>each byte as a grayscale pixel</figcaption>
+      </figure>
+    </div>
+    <p id="dumpHuman" class="hint">—</p>
+    <p class="hint">These bytes come from this page's <em>own</em> OPFS probe file (random data we
+      wrote at startup). OPFS is sandboxed — it cannot read other apps' files, other websites'
+      storage, or arbitrary disk sectors. FROST never reads anyone's data; its signal is purely
+      the read <em>latency</em>.</p>
+  </section>
+
   <script type="module" src="./app.js"></script>
 </body>
 </html>
