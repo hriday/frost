@@ -54,6 +54,26 @@ hardware-dependent and verified with the manual checklist below.
    the trace and the **spikes >1ms** counter rising.
 5. Click **Stop** — the trace freezes. Click **Delete probe file** — the Storage line drops.
 
+## Website fingerprinting demo
+
+A per-visitor, closed-world reproduction of the paper's website-fingerprinting attack. Because
+an SSD fingerprint is specific to the machine, OS, and browser, the page calibrates on the
+visitor's own machine rather than shipping a pre-trained model.
+
+Manual checklist:
+1. Start the SSD measurement (build a probe file larger than free RAM) so there is a contention
+   signal.
+2. In **Website fingerprinting**, click "Capture YouTube" — a tab opens, an 8 s window records,
+   the tab closes. Repeat for each site (≈3 reps each). At least two sites must be calibrated.
+3. Click **Self-test**: the page opens one of your calibrated sites at random and identifies it.
+   Run it a few times — it should be mostly correct.
+4. Click **Guess what I open**, wait for the countdown, then open one calibrated site yourself in
+   a new tab. The page predicts which one.
+
+Accuracy is rough in a casual setting (the page cannot reset the OS page cache, so signals are
+strongest on first opens) and is well below the paper's controlled-automation F1 scores. It only
+works when the opened site's disk activity hits the same SSD as the probe file.
+
 ## Deployment (frost.moosha.org)
 
 Run `server.js` behind your TLS terminator. The COOP/COEP headers must reach the browser

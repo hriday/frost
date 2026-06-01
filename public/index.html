@@ -78,6 +78,26 @@
       the read <em>latency</em>.</p>
   </section>
 
+  <section class="panel">
+    <h2>Website fingerprinting</h2>
+    <p class="hint">Start the SSD measurement above first. Then <strong>calibrate</strong> by
+      capturing each site a few times on this machine, and let the page <strong>guess</strong>
+      which one you open. Closed-world: it always picks the closest calibrated site.</p>
+    <div id="fpSites" class="fpsites"></div>
+    <div class="buttons">
+      <button id="fpGuess" disabled>Guess what I open</button>
+      <button id="fpSelfTest" disabled>Self-test</button>
+    </div>
+    <p id="fpStatus" class="status">Calibrate at least two sites to enable guessing.</p>
+    <div id="fpResults" class="fpresults"></div>
+    <p class="hint">Why calibration is needed: an SSD fingerprint is specific to this machine,
+      OS, and browser, so the page learns it where it runs. It can't reset the OS page cache from
+      JavaScript, so a site's signal is strongest on its first open and weakens on repeats.
+      Accuracy here is rough — well below the paper's controlled-lab numbers — and works only when
+      the site's activity hits the same SSD as the probe file. Calibration lives in this tab
+      only; nothing is stored or sent anywhere.</p>
+  </section>
+
   <script type="module" src="./app.js"></script>
 </body>
 </html>
