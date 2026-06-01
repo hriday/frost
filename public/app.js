@@ -32,6 +32,7 @@ const calibration = new Map(); // label -> vector[]
 const templates = new Map();   // label -> template vector
 let captureSink = null;        // function(sample) while a capture window is open
 let measuring = false;         // true while the SSD read-loop is running
+let capturing = false;         // true while a single capture window is in flight
 
 function setStatus(text) { $('status').textContent = text; }
 
@@ -74,12 +75,12 @@ function ensureWorker() {
       const pct = ((m.written / m.total) * 100).toFixed(0);
       setStatus(`Preparing probe file… ${pct}% (${fmtBytes(m.written)} / ${fmtBytes(m.total)})`);
     } else if (m.type === 'samples') {
-      const arr = performance.now();
+      const arrivedAt = performance.now();
       for (const v of m.latencies) {
         raw.push(v);
         sampleCount++;
         if (v > SPIKE_MS) spikeCount++;
-        if (captureSink) captureSink({ t: arr, latency: v });
+        if (captureSink) captureSink({ t: arrivedAt, latency: v });
       }
     } else if (m.type === 'dump') {
       renderDump(m.offset, m.readSize, m.bytes);
@@ -183,9 +184,23 @@ function fpStatus(text) { $('fpStatus').textContent = text; }
 function captureWindow(ms) {
   return new Promise((resolve) => {
     const buf = [];
+    capturing = true;
+    setFpBusy(true);
     captureSink = (s) => buf.push(s);
-    setTimeout(() => { captureSink = null; resolve(buf); }, ms);
+    setTimeout(() => {
+      captureSink = null;
+      capturing = false;
+      setFpBusy(false);
+      resolve(buf);
+    }, ms);
   });
+}
+
+// Disable/enable all fingerprinting buttons while a capture window is open.
+function setFpBusy(busy) {
+  for (const btn of document.querySelectorAll('#fpSites button')) btn.disabled = busy;
+  $('fpGuess').disabled = busy || templates.size < 2;
+  $('fpSelfTest').disabled = busy || templates.size < 2;
 }
 
 function traceToVector(samples) {
@@ -232,6 +247,7 @@ function renderResults(result) {
 }
 
 async function captureSite(site) {
+  if (capturing) { fpStatus('A capture is already running — wait for it to finish.'); return; }
   if (!measuring) { fpStatus('Start the SSD measurement first.'); return; }
   const popup = window.open(site.url, '_blank');
   if (!popup) fpStatus(`Popup blocked — allow popups, or open ${site.label} yourself now.`);
@@ -247,6 +263,7 @@ async function captureSite(site) {
 }
 
 async function guess() {
+  if (capturing) { fpStatus('A capture is already running — wait for it to finish.'); return; }
   if (templates.size < 2) { fpStatus('Calibrate at least two sites first.'); return; }
   if (!measuring) { fpStatus('Start the SSD measurement first.'); return; }
   await countdown(3);
@@ -259,12 +276,14 @@ async function guess() {
 }
 
 async function selfTest() {
+  if (capturing) { fpStatus('A capture is already running — wait for it to finish.'); return; }
   if (templates.size < 2) { fpStatus('Calibrate at least two sites first.'); return; }
   if (!measuring) { fpStatus('Start the SSD measurement first.'); return; }
   const labels = [...templates.keys()];
   const pick = labels[Math.floor(Math.random() * labels.length)];
   const site = SITES.find((s) => s.label === pick);
   const popup = window.open(site.url, '_blank');
+  if (!popup) { fpStatus('Popup blocked — allow popups so self-test can open a site.'); return; }
   fpStatus('Self-test: measuring a site I picked secretly…');
   const samples = await captureWindow(FP_WINDOW_MS);
   try { if (popup) popup.close(); } catch (e) { /* cross-origin close may throw */ }
