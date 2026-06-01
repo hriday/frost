@@ -26,6 +26,7 @@ function makeRandomChunk() {
 }
 
 async function provision(sizeBytes) {
+  if (handle) { try { handle.close(); } catch {} handle = null; }
   handle = await openHandle();
   if (handle.getSize() === sizeBytes) {
     post('status', { phase: 'ready', message: 'Reusing existing probe file.' });
@@ -79,6 +80,11 @@ self.onmessage = async (e) => {
   const msg = e.data;
   try {
     if (msg.type === 'start') {
+      if (running) return; // ignore overlapping start; stop first
+      if (!(msg.sizeBytes > 0) || !(msg.readSize > 0) || msg.readSize >= msg.sizeBytes) {
+        post('error', { message: 'Invalid sizeBytes/readSize (need readSize < sizeBytes, both > 0).' });
+        return;
+      }
       post('status', { phase: 'provisioning', message: 'Preparing probe file…' });
       await provision(msg.sizeBytes);
       running = true;
@@ -86,6 +92,7 @@ self.onmessage = async (e) => {
       measureLoop(msg.sizeBytes, msg.readSize);
     } else if (msg.type === 'stop') {
       running = false;
+      if (handle) { try { handle.flush(); } catch {} try { handle.close(); } catch {} handle = null; }
       post('status', { phase: 'stopped', message: 'Stopped.' });
     } else if (msg.type === 'delete') {
       running = false;
