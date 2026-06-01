@@ -42,3 +42,25 @@ export function binTrace(samples, { windowMs = 8000, bins = 200 } = {}) {
   for (let i = 0; i < bins; i++) means[i] = counts[i] ? sums[i] / counts[i] : null;
   return interpolateNulls(means);
 }
+
+// Z-normalize a vector (zero mean, unit std). All-equal input -> zeros.
+export function normalize(vec) {
+  const n = vec.length;
+  if (n === 0) return [];
+  const mean = vec.reduce((a, b) => a + b, 0) / n;
+  let varSum = 0;
+  for (const v of vec) varSum += (v - mean) ** 2;
+  const std = Math.sqrt(varSum / n);
+  if (std === 0) return vec.map(() => 0);
+  return vec.map((v) => (v - mean) / std);
+}
+
+// Elementwise mean of equal-length vectors.
+export function buildTemplate(vectors) {
+  const n = vectors.length;
+  if (n === 0) return [];
+  const len = vectors[0].length;
+  const out = new Array(len).fill(0);
+  for (const vec of vectors) for (let i = 0; i < len; i++) out[i] += vec[i];
+  return out.map((s) => s / n);
+}

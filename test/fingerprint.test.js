@@ -26,3 +26,21 @@ test('binTrace ignores samples past the window', () => {
   assert.equal(out[0], 2);
   assert.equal(out[1], 2);
 });
+
+import { normalize, buildTemplate } from '../src/fingerprint.js';
+
+test('normalize gives zero mean and unit std', () => {
+  const out = normalize([1, 2, 3]);
+  const mean = out.reduce((a, b) => a + b, 0) / out.length;
+  assert.ok(Math.abs(mean) < 1e-9);
+  const std = Math.sqrt(out.reduce((a, b) => a + b * b, 0) / out.length);
+  assert.ok(Math.abs(std - 1) < 1e-9);
+});
+
+test('normalize maps all-equal input to zeros', () => {
+  assert.deepEqual(normalize([5, 5, 5]), [0, 0, 0]);
+});
+
+test('buildTemplate averages elementwise', () => {
+  assert.deepEqual(buildTemplate([[1, 2], [3, 4]]), [2, 3]);
+});
