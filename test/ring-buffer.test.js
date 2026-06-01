@@ -28,3 +28,9 @@ test('pushAll appends many values', () => {
   rb.pushAll([1, 2, 3, 4]);
   assert.deepEqual(rb.toArray(), [2, 3, 4]);
 });
+
+test('rejects invalid capacity', () => {
+  assert.throws(() => new RingBuffer(0), RangeError);
+  assert.throws(() => new RingBuffer(-1), RangeError);
+  assert.throws(() => new RingBuffer(2.5), RangeError);
+});
