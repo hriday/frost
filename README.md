@@ -1,86 +1,113 @@
-# FROST POC
+# FROST
 
-Browser-only proof-of-concept of **FROST: Fingerprinting Remotely using OPFS-based SSD
-Timing** (Weissteiner et al.). It creates a large file in the Origin Private File System
-(OPFS), performs timed random reads against it, and plots the SSD access-latency trace live.
-When other activity on the machine touches the same SSD, contention raises the read latencies
-— visible as spikes in the trace.
+**Live demo: [frost.moosha.org](https://frost.moosha.org)**
 
-Everything runs locally in your browser. No data leaves the page; there is no backend storage.
+A browser-only proof-of-concept of **FROST: Fingerprinting Remotely using OPFS-based SSD
+Timing** ([paper](https://hannesweissteiner.com/pdfs/frost.pdf), Weissteiner et al.). From
+plain JavaScript, the page times random reads against a large file in the Origin Private File
+System (OPFS) and plots your SSD's access latency live. When anything else on the machine
+touches the same SSD (an app launching, a website loading), contention pushes those latencies
+up. The spikes are a side channel that leaks what you're doing.
 
-## Run
+Everything runs locally in your browser and measures only your own machine. No measurement
+data leaves the page, and there is no backend storage.
+
+> This is an unaffiliated reproduction for education and research. It is not the authors'
+> code.
+
+## What the demo does
+
+- **Live SSD-contention monitor.** Creates a probe file in OPFS (size is up to you, 1–8 GB),
+  runs timed random reads, and charts the latency trace with live stats (median, p95, read
+  rate, spikes over 1 ms) and a spike-filtered overlay.
+- **"Last read off the SSD" view.** Hex dump and grayscale swatch of the bytes just read. They
+  come from the page's own random-filled probe file. OPFS is sandboxed, so the signal is the
+  read *latency* and never anyone's data.
+- **Website fingerprinting.** A closed-world version of the paper's attack. You calibrate by
+  capturing a few traces each of YouTube, Wikipedia, Amazon, and example.com. Then the page
+  guesses which of them you open in another tab. **Self-test** mode opens one at random and
+  identifies it, so you can see it isn't rigged.
+
+### Try it
+
+1. Open [frost.moosha.org](https://frost.moosha.org) in a desktop browser. The Environment
+   panel should show **Cross-origin isolated: yes** and **OPFS available: yes**.
+2. Pick a probe size larger than your free RAM (so reads go to the SSD instead of the page
+   cache) and click **Start**. Wait for "Preparing probe file… 100%".
+3. Launch an app or load a heavy website and watch the trace spike.
+4. For fingerprinting, capture each site about 3 times, then try **Self-test** or **Guess what
+   I open**.
+5. When you're done, click **Stop**, then **Delete probe file** to free the disk space.
+
+Accuracy is rough in a casual setting and well below the paper's controlled-lab F1 scores.
+JavaScript can't reset the OS page cache, so a site's signal is strongest the first time it's
+opened. It also only works when the site's disk activity hits the same SSD as the probe file.
+Calibration lives in the tab and is never stored or sent anywhere.
+
+## Why the server matters
+
+Browsers coarsen `performance.now()` unless the page is *cross-origin isolated*. Without it,
+the timer is too coarse for the SSD signal. The bundled server sets these headers on every
+response:
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+Opening `public/index.html` directly over `file://` will **not** work. If a reverse proxy or
+CDN sits in front of the server, make sure it passes these headers through unchanged.
+
+## Run locally
+
+Requires Node.js 22+. There are no dependencies, so `npm install` isn't needed.
 
 ```bash
-npm start          # serves http://localhost:8080
+npm start              # http://localhost:8080
 PORT=3000 npm start
 ```
 
-The server sets `Cross-Origin-Opener-Policy: same-origin` and
-`Cross-Origin-Embedder-Policy: require-corp` on every response. These enable
-`crossOriginIsolated`, which unlocks the high-resolution `performance.now()` timer the
-measurement needs. Opening the files directly (`file://`) will **not** work.
+Or with Docker:
+
+```bash
+docker compose up -d --build   # binds 127.0.0.1:8013
+```
 
 ## Test
 
 ```bash
-npm test           # runs the unit tests via node --test
+npm test
 ```
 
-Unit tests cover the ring buffer, statistics, the spike filter, and the server (headers,
-404, path-traversal guard, and the `/src` module route). The timing/OPFS/canvas parts are
-hardware-dependent and verified with the manual checklist below.
+The unit tests (`node --test`) cover the ring buffer, statistics, spike filter, hex dump,
+trace classifier, and server (headers, 404, path-traversal guard, `/src` route). The parts
+that depend on timing, OPFS, and the canvas vary by hardware, so they're checked by hand with
+the steps in [Try it](#try-it).
 
-## How it works
+## Project layout
 
-- `server.js` — zero-dependency Node static server. Serves `public/` and the shared ES
-  modules under `/src` (the page imports them), and sets the COOP/COEP isolation headers.
-- `public/probe-worker.js` — a Web Worker that owns all OPFS I/O. It provisions the probe
-  file (reused across reloads), fills it with random data to defeat page deduplication, then
-  loops timed random reads (`performance.now()` around `SyncAccessHandle.read`) and posts
-  sample batches to the page. It releases the OPFS handle on **Stop**.
-- `public/app.js` — wires the controls to a single persistent worker, buffers samples,
-  computes live stats and the spike-filtered overlay, and renders the canvas chart.
-- `src/` — pure, unit-tested logic (`RingBuffer`, `median`/`percentile`, `spikeFilter`),
-  imported unchanged by both the browser and the Node test runner.
-
-## Manual test checklist
-
-1. `npm start`, open `http://localhost:8080`. Confirm **Cross-origin isolated: yes** and
-   **OPFS available: yes** in the Environment panel.
-2. Pick a file size larger than your free RAM (heed the cache warning), click **Start**, accept
-   the confirmation. Watch "Preparing probe file… N%" complete.
-3. A baseline latency trace appears and updates live.
-4. Launch a native app (or load a heavy website) on the same disk. Observe latency spikes in
-   the trace and the **spikes >1ms** counter rising.
-5. Click **Stop** — the trace freezes. Click **Delete probe file** — the Storage line drops.
-
-## Website fingerprinting demo
-
-A per-visitor, closed-world reproduction of the paper's website-fingerprinting attack. Because
-an SSD fingerprint is specific to the machine, OS, and browser, the page calibrates on the
-visitor's own machine rather than shipping a pre-trained model.
-
-Manual checklist:
-1. Start the SSD measurement (build a probe file larger than free RAM) so there is a contention
-   signal.
-2. In **Website fingerprinting**, click "Capture YouTube" — a tab opens, an 8 s window records,
-   the tab closes. Repeat for each site (≈3 reps each). At least two sites must be calibrated.
-3. Click **Self-test**: the page opens one of your calibrated sites at random and identifies it.
-   Run it a few times — it should be mostly correct.
-4. Click **Guess what I open**, wait for the countdown, then open one calibrated site yourself in
-   a new tab. The page predicts which one.
-
-Accuracy is rough in a casual setting (the page cannot reset the OS page cache, so signals are
-strongest on first opens) and is well below the paper's controlled-automation F1 scores. It only
-works when the opened site's disk activity hits the same SSD as the probe file.
-
-## Deployment (frost.moosha.org)
-
-Run `server.js` behind your TLS terminator. The COOP/COEP headers must reach the browser
-unmodified, so if a reverse proxy or CDN sits in front, ensure it does not strip them.
+```
+server.js               zero-dependency static server; sets COOP/COEP, serves public/ and /src
+public/
+  index.html, style.css the page
+  app.js                UI, live chart, stats, and fingerprinting capture controller
+  probe-worker.js       Web Worker that owns all OPFS I/O and the timed read loop
+src/                    pure logic shared by the browser and the Node tests
+  ring-buffer.js, stats.js, spike-filter.js, hexdump.js
+  fingerprint.js        trace binning and the lag-tolerant template-matching classifier
+test/                   node:test unit tests
+docs/superpowers/       design specs and implementation plans
+frost.pdf               the original paper
+```
 
 ## Scope
 
-This POC implements the paper's core measurement primitive and live visualization only. The
-CNN fingerprinting and covert-channel constructions from the paper are intentionally out of
-scope.
+The demo covers the paper's core measurement primitive, live visualization, and a
+per-visitor, closed-world website-fingerprinting demo that uses template matching. It leaves
+out the paper's CNN classifier, open-world detection, application fingerprinting, and covert
+channel.
+
+## Credit
+
+The attack is from *FROST: Fingerprinting Remotely using OPFS-based SSD Timing* by Hannes
+Weissteiner et al. (TU Graz). All credit for the research goes to the authors.
